@@ -18,7 +18,7 @@ function frame(now){
   }
   requestAnimationFrame(frame);
 }
-addEventListener('pagehide',()=>saveNow());
-document.addEventListener('visibilitychange',()=>{if(document.hidden)saveNow()});
+addEventListener('pagehide',()=>flushSave());
+document.addEventListener('visibilitychange',()=>{if(document.hidden)flushSave()});
 function boot(){resize();importLegacy();showSlots();requestAnimationFrame(t=>{last=t;frame(t)})}
 boot();

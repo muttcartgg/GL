@@ -13,7 +13,14 @@ function lum(hex){const n=parseInt(String(hex).slice(1),16)||0,r=(n>>16)/255,g=(
 const inkOn=c=>lum(c)>.55?'#0B0E14':'#FFFFFF';
 const contrasty=(a,b)=>Math.abs(lum(a)-lum(b))>.25;
 function shade(hex,f){const n=parseInt(hex.slice(1),16);let r=n>>16,g=n>>8&255,b=n&255;const t=f<0?0:255,p=Math.abs(f);r=Math.round((t-r)*p+r);g=Math.round((t-g)*p+g);b=Math.round((t-b)*p+b);return '#'+((1<<24)+(r<<16)+(g<<8)+b).toString(16).slice(1)}
-const starStr=n=>{n=clamp(Math.round(n),0,5);return `<span class="stars" aria-label="${n} of 5 stars">${'★'.repeat(n)}<i>${'★'.repeat(5-n)}</i></span>`};
+/* Overall rating system: internal ratings run 1.0-5.0 and are shown as 40-99 overalls */
+const OV=v=>Math.round(clamp(40+(v-1)*14.75,40,99));
+const fromOV=o=>clamp(1+(o-40)/14.75,1,5);
+const ovCol=o=>o>=90?'#E6B33C':o>=80?'var(--ok)':o>=70?'#5AA9FF':o>=60?'var(--warn)':'var(--hot)';
+const ovBadge=o=>`<span class="ovrn" style="display:inline-block;min-width:2.1em;padding:1px 6px;border-radius:6px;background:color-mix(in srgb,${ovCol(o)} 22%,transparent);color:${ovCol(o)};font-weight:800;font-variant-numeric:tabular-nums;text-align:center" aria-label="Overall ${o}">${o}</span>`;
+const starStr=n=>ovBadge(OV(n));
+const bump=v=>Math.min(5,Math.round((v+.3)*10)/10);
+const upCost=v=>Math.ceil(v)+1;
 const ordn=n=>n+(['th','st','nd','rd'][((n%100)-20)%10]||['th','st','nd','rd'][n%100]||'th');
 const money=k=>k>=1000?`$${(k/1000).toFixed(k%1000?2:0)}M`:`$${Math.round(k)}K`;
 const pct=x=>Math.round(x*100)+'%';
@@ -32,20 +39,27 @@ const KV={
   }
 };
 const SLOTS=[1,2,3];
+const pack=obj=>'Z:'+LZString.compressToBase64(JSON.stringify(obj));
+const unpack=raw=>{if(!raw)return null;if(raw.startsWith('Z:'))return JSON.parse(LZString.decompressFromBase64(raw.slice(2)));return JSON.parse(raw)};
 const Saves={
   meta(){try{return JSON.parse(KV.get('gl3.meta'))||{slots:{},last:null}}catch(e){return {slots:{},last:null}}},
   writeMeta(m){KV.set('gl3.meta',JSON.stringify(m))},
-  load(slot){const raw=KV.get('gl3.slot'+slot);if(!raw)return null;try{return migrate(JSON.parse(raw))}catch(e){console.error(e);return null}},
+  load(slot){
+    try{const L=migrate(unpack(KV.get('gl3.slot'+slot)));if(!L)return null;let live=null;try{live=JSON.parse(KV.get('gl3.live'+slot)||'null')}catch(e){}L.live=live&&live.wk===L.week&&L.phase==='regular'?live:null;return L}
+    catch(e){console.error(e);return null}
+  },
   save(slot,L){
     if(!slot||!L)return;
-    try{KV.set('gl3.slot'+slot,JSON.stringify(L))}catch(e){console.error(e)}
-    const m=this.meta(),u=L.teams[L.user];
-    m.slots[slot]={name:L.name,coach:L.coach.name,team:teamName(u),abbr:u.abbr,c1:u.c1,c2:u.c2,season:L.season,label:weekLabel(L),rec:`${u.rec.w}–${u.rec.l}`,updated:Date.now(),live:!!L.live,titles:L.coach.natties};
-    m.last=slot;this.writeMeta(m);
+    try{const live=L.live;L.live=null;const raw=pack(L);L.live=live;KV.set('gl3.slot'+slot,raw);KV.set('gl3.live'+slot,live?JSON.stringify(live):null)}catch(e){console.error(e);try{toast('Could not save. Storage may be full.')}catch(_){}}
+    this.touch(slot,L);
   },
-  del(slot){KV.set('gl3.slot'+slot,null);const m=this.meta();delete m.slots[slot];if(m.last==slot)m.last=null;this.writeMeta(m)},
-  exportCode(L){return 'GL3:'+btoa(unescape(encodeURIComponent(JSON.stringify(L))))},
-  importCode(code){code=String(code).trim();if(code.startsWith('GL3:'))code=code.slice(4);const L=JSON.parse(decodeURIComponent(escape(atob(code))));return migrate(L)}
+  saveLive(slot,L){if(!slot||!L)return;KV.set('gl3.live'+slot,L.live?JSON.stringify(L.live):null);this.touch(slot,L)},
+  touch(slot,L){const m=this.meta(),u=L.teams[L.user];
+    m.slots[slot]={name:L.name,coach:L.coach.name,team:teamName(u),abbr:u.abbr,c1:u.c1,c2:u.c2,season:L.season,label:weekLabel(L),rec:`${u.rec.w}–${u.rec.l}`,updated:Date.now(),live:!!L.live,titles:L.coach.natties,div:u.div};
+    m.last=slot;this.writeMeta(m)},
+  del(slot){KV.set('gl3.slot'+slot,null);KV.set('gl3.live'+slot,null);const m=this.meta();delete m.slots[slot];if(m.last==slot)m.last=null;this.writeMeta(m)},
+  exportCode(L){return 'GL3Z:'+LZString.compressToBase64(JSON.stringify(L))},
+  importCode(code){code=String(code).trim().replace(/\s+/g,'');let L;if(code.startsWith('GL3Z:'))L=JSON.parse(LZString.decompressFromBase64(code.slice(5)));else{if(code.startsWith('GL3:'))code=code.slice(4);L=JSON.parse(decodeURIComponent(escape(atob(code))))}return migrate(L)}
 };
 /* Older saves (v1) are carried into slot 1 on first launch */
 function importLegacy(){

@@ -25,7 +25,7 @@ function speedOf(role,pl,side){const u=side==='o';return SPD[role]*(.82+.06*pl.s
 function startUserGame(g,snap){
   hideAll();
   const u=T(LG.user),opp=T(g.h===LG.user?g.a:g.h);
-  Object.assign(S,{game:g,home:u,away:opp,userHome:g.h===LG.user&&!g.neutral,neutral:!!g.neutral,qlen:LG.settings.qlen,diffMul:DIFF[LG.settings.diff]||1,wx:g.wx||'Clear',slot:g.slot||'Afternoon',ts:1,slowT:0,shake:0,paused:false,simmed:false,celebrate:null});
+  Object.assign(S,{game:g,home:u,away:opp,userHome:g.h===LG.user&&!g.neutral,neutral:!!g.neutral,qlen:LG.settings.qlen,diffMul:(DIFF[LG.settings.diff]||1)*(g.h!==LG.user&&!g.neutral?1.02:1),exitToast:false,wx:g.wx||'Clear',slot:g.slot||'Afternoon',ts:1,slowT:0,shake:0,paused:false,simmed:false,celebrate:null});
   muted=!!LG.settings.muted;
   S.dc={o:{},d:{}};for(const pos of POS_ORDER){S.dc.o[pos]=depth(u,pos);S.dc.d[pos]=depth(opp,pos)}
   if(snap){Object.assign(S,JSON.parse(JSON.stringify(snap.S)))}
@@ -34,14 +34,14 @@ function startUserGame(g,snap){
   document.documentElement.style.setProperty('--opp',opp.c1);
   $('#sb').hidden=false;$('#pauseBtn').hidden=false;
   if(snap){if(snap.pat){S.phase='pat';showPAT()}else toPresnap();toast('Game resumed')}
-  else{startDrive(35);banner(g.rival?u.trophy:g.tag||'Kickoff',u.c1)}
+  else{startDrive(35);banner(g.rival?u.trophy:g.tag||'Kickoff',u.c1);setTimeout(()=>toast(stadiumLine(g)),1500)}
 }
 function resumeGame(simRest){const g=userGameThisWeek();if(!g||!LG.live){LG.live=null;return showHub('home')}startUserGame(g,LG.live);if(simRest)setTimeout(simToFinal,50)}
 function snapshot(pat){
   if(!LG)return;
   LG.live={wk:LG.week,opp:S.away.id,score:S.score.slice(),q:S.q,clock:S.clock,ot:S.ot,pat:!!pat,
     S:{score:S.score,q:S.q,clock:S.clock,los:S.los,ballY:S.ballY,down:S.down,firstDownX:S.firstDownX,conv:S.conv,ot:S.ot,otRound:S.otRound,to:S.to,stats:S.stats,pst:S.pst,dxp:S.dxp,lastRunoff:S.lastRunoff,rzActive:S.rzActive}};
-  saveNow();
+  Saves.saveLive(SLOT,LG);
 }
 function startDrive(x){S.los=x;S.ballY=CEN;S.down=1;S.firstDownX=Math.min(110,x+10);S.conv=false;S.rzActive=false;toPresnap()}
 function toPresnap(){
@@ -57,6 +57,7 @@ function add(side,role,x,y,pl){
   const user=side==='o';
   const p={side,role,x,y,vx:0,vy:0,z:0,pl,num:pl.num,spd:speedOf(role,pl,side),acc:ACC[role],route:null,rpath:null,cont:null,wi:0,stop:false,stun:0,bt:0,immune:false,
     shed:role==='DL'?(R(1.6,3.4)-(pl.str-3)*.25)*(focus('running')?1.25:1):R(.4,1.1),assign:null,homeY:y,blocker:false,face:user?1:-1,phase:Math.random()*6.28,fallen:false,fallP:0,lunge:0,lungeCD:0,stiff:0,throwT:0,react:0,engaged:false};
+  if(user&&perk('t1'))p.spd*=1.015;
   if(user&&LG.staff){const oc=LG.staff.oc;if(['WR','TE','RB'].includes(role))p.spd*=1+.01*(oc.r-3)+(oc.trait==='Play Caller'?.03:0)}
   P.push(p);(user?OFF:DEF).push(p);return p;
 }
@@ -96,7 +97,7 @@ function showCall(){
     if(!S.ot)opts.push({k:'punt',t:'Punt',s:'Flip the field',cls:'alt'},{k:'fakepunt',t:'Fake punt',s:'Catch them napping',cls:'warn'});
     const fd=fgDist();if(fd<=maxFG()+3)opts.push({k:'fg',t:'Field goal',s:fd+' yd attempt',cls:'alt'},{k:'fakefg',t:'Fake FG',s:'Surprise run',cls:'warn'});
   }
-  $('#callHead').innerHTML=`<b>${esc(ddText())}</b> · ${S.conv?'from the 3':esc(spotLabel(S.los))} · QB ${esc(Q.pl.last)} ${'★'.repeat(Q.pl.thr)}${S.wx!=='Clear'?' · '+WX_ICON[S.wx]+' '+S.wx:''}`;
+  $('#callHead').innerHTML=`<b>${esc(ddText())}</b> · ${S.conv?'from the 3':esc(spotLabel(S.los))} · QB ${esc(Q.pl.last)} ${OV(ovr(Q.pl))} OVR${S.wx!=='Clear'?' · '+WX_ICON[S.wx]+' '+S.wx:''}`;
   const row=$('#callRow');row.innerHTML='';
   opts.forEach(o=>{const b=document.createElement('button');b.className='play '+(o.cls||'');b.id='call-'+o.k;b.innerHTML=`<b>${o.t}</b><small>${o.s}</small>`;b.onclick=()=>{ac();callPlay(o.k)};row.appendChild(b)});
   $('#call').hidden=false;
@@ -111,7 +112,7 @@ function callPlay(k){
   if(S.phase!=='presnap')return;$('#call').hidden=true;$('#toBtn').hidden=true;
   if(k==='punt')return doPunt();
   if(k==='fg')return startKick(fgDist(),'fg');
-  const fsP=(S.userHome||S.neutral?.012:.05)*(hasTrait('dc','Disciplinarian')?.6:1)*(1.2-LG.morale/250);
+  const fsP=(S.q>=4&&perk('t4')?0:(S.userHome||S.neutral?.012:.05))*(hasTrait('dc','Disciplinarian')?.6:1)*(1.2-LG.morale/250);
   if(!S.conv&&k!=='kneel'&&Math.random()<fsP){flagMsg(`False start · offense · 5 yards${!S.userHome&&!S.neutral?' · crowd noise':''}`);S.los=Math.max(11,S.los-5);S.stats.pen++;S.stats.penYds+=5;setupFormation();showCall();S.playClock=25;return}
   const b=S.ballY,type=(k==='pass'||k==='pa')?'pass':'run';
   play={type,call:k,t:0,carrier:Q,thrown:false,scramble:false,handed:k==='qbrun',qbrun:k==='qbrun',pa:k==='pa',fake:k==='fakepunt'||k==='fakefg',jukeT:0,jukeCD:0,jukeDir:1,slowT:0,dive:0,hurdle:0,hurdleOK:false,ended:false,fakes:0,caught:false,catchX:0,gapY:b+pick([-3.3,-1.6,1.6,3.3]),result:null,ballT0:0,rec:null,contested:false,tipped:new Set(),startDown:S.down};
@@ -136,9 +137,9 @@ function doPunt(){
 function startKick(dist,kind){
   S.phase='kick';const k=kicker();
   kick={dist,kind,stage:'aim',t:0,ang:0,pow:0,lockA:0,lockP:0,flight:0,good:null,
-    width:clamp(.34-(dist-20)*.0055,.09,.34)*(.8+.1*k.acc)*(kind==='xp'?1.25:1),
+    width:clamp(.34-(dist-20)*.0055,.09,.34)*(.8+.1*k.acc)*(kind==='xp'?1.25:1)*(perk('t4')?1.15:1),
     need:clamp(dist/maxFG(),.22,1.02)*(S.wx==='Rain'||S.wx==='Snow'?1.05:1),drift:S.wx==='Wind'?R(-.12,.12):0,aSpeed:1.3+dist*.018,k};
-  $('#kickHead').innerHTML=`<b>${kind==='xp'?'Extra point':'Field goal'} · ${dist} yd</b> · K ${esc(k.last)} ${'★'.repeat(k.thr)}${S.wx==='Wind'?' · wind':''}`;
+  $('#kickHead').innerHTML=`<b>${kind==='xp'?'Extra point':'Field goal'} · ${dist} yd</b> · K ${esc(k.last)} ${OV(ovr(k))} OVR${S.wx==='Wind'?' · wind':''}`;
   $('#kickBtn').textContent='Tap to aim';$('#kickBtn').disabled=false;$('#kick').hidden=false;hint('Tap once to lock direction, again to lock power');
 }
 function kickTap(){
@@ -284,13 +285,13 @@ function throwBall(tx,ty,bullet){
   const d=hyp(tx-Q.x,ty-Q.y),thr=Q.pl.thr,acc=Q.pl.acc;
   const pressure=DEF.some(o=>o.role==='DL'&&hyp(o.x-Q.x,o.y-Q.y)<2.2);
   const wx=S.wx==='Rain'?1.2:S.wx==='Snow'?1.15:S.wx==='Wind'&&d>20?1.3:1;
-  const er=d*(.012*(6-acc))*(bullet?1.25:1)*(pressure?1.35:1)*wx*(focus('passing')?.8:1);
+  const er=d*(.012*(6-acc))*(bullet?1.25:1)*(pressure?1.35:1)*wx*(focus('passing')?.8:1)*(perk('t3')?.88:1);
   const a=Math.random()*Math.PI*2,r=er*Math.sqrt(Math.random());tx+=Math.cos(a)*r;ty+=Math.sin(a)*r;
   const v=(17.5+1.8*thr)*(bullet?1.45:1);
   ball={state:'air',fx:Q.x,fy:Q.y,x:Q.x,y:Q.y,z:0,tx,ty,t:0,T:Math.max(.3,d/(v+d*.18)),h:bullet?d*.03+.45:d*.11+.5,bullet,spin:0};
   play.thrown=true;play.ballT0=play.t;play.carrier=null;Q.throwT=.35;if(!S.conv){S.stats.att++;ps(Q).pa++}sfx(bullet?'zip':'thump');hint('');$('#bulletBtn').hidden=true;
 }
-function aimError(d,bullet){const pressure=DEF.some(o=>o.role==='DL'&&hyp(o.x-Q.x,o.y-Q.y)<2.2);const wx=S.wx==='Rain'?1.2:S.wx==='Snow'?1.15:S.wx==='Wind'&&d>20?1.3:1;return d*(.012*(6-Q.pl.acc))*(bullet?1.25:1)*(pressure?1.35:1)*wx*(focus('passing')?.8:1)}
+function aimError(d,bullet){const pressure=DEF.some(o=>o.role==='DL'&&hyp(o.x-Q.x,o.y-Q.y)<2.2);const wx=S.wx==='Rain'?1.2:S.wx==='Snow'?1.15:S.wx==='Wind'&&d>20?1.3:1;return d*(.012*(6-Q.pl.acc))*(bullet?1.25:1)*(pressure?1.35:1)*wx*(focus('passing')?.8:1)*(perk('t3')?.88:1)}
 function logPass(res){if(S.conv)return null;const r={depth:ball.tx-S.los,y:ball.ty,res,yds:0,yac:0};S.stats.passes.push(r);return r}
 function resolveCatch(){
   const tx=ball.tx,ty=ball.ty;
@@ -396,7 +397,7 @@ function startOT(){
   if(S.otRound>=3){S.conv=true;S.los=107;S.ballY=CEN;S.down=1;S.firstDownX=110;toPresnap();banner(S.otRound+'OT · two-point play',S.home.c1);return}
   S.los=85;S.ballY=CEN;S.down=1;S.firstDownX=95;S.conv=false;toPresnap();banner((S.otRound>1?S.otRound:'')+'OT',S.home.c1);
 }
-function oppRating(){return clamp(.5+(offOvr(S.away)-defOvr(S.home))*.22+(S.diffMul-1)*2-(LG.staff.dc.r-3)*.03-(hasTrait('dc','Run Stopper')?.04:0)-(focus('film')?.04:0),.1,.92)}
+function oppRating(){return clamp(.5+(offOvr(S.away)-defOvr(S.home))*.22+(S.diffMul-1)*2-(perk('t2')?.03:0)-((LG.coach.ovr||70)-70)*.0008-(LG.staff.dc.r-3)*.03-(hasTrait('dc','Run Stopper')?.04:0)-(focus('film')?.04:0),.1,.92)}
 function oppOT(){
   S.phase='drive';S.poss='away';hint('');
   const r=oppRating();let res,pts=0;const lines=[];const A=S.away,aq=starters(A,'QB')[0],ar=starters(A,'RB')[0],aw=starters(A,'WR')[0];
@@ -481,7 +482,7 @@ $('#dcGo').onclick=()=>{ac();cardNext&&cardNext()};
 /* pause + sim to final */
 $('#pauseBtn').onclick=()=>{if(['presnap','live','dead','pat','kick','wait','drive'].includes(S.phase)){S.paused=true;$('#pausem').hidden=false}};
 $('#resume').onclick=()=>{S.paused=false;$('#pausem').hidden=true};
-$('#quitHub').onclick=()=>{S.paused=false;$('#pausem').hidden=true;clearInterval(tickTimer);if(!LG.live)snapshot();saveNow();showHub('home')};
+$('#quitHub').onclick=()=>{S.paused=false;$('#pausem').hidden=true;clearInterval(tickTimer);if(!LG.live)snapshot();saveNow(true);showHub('home')};
 $('#simRest').onclick=()=>{S.paused=false;$('#pausem').hidden=true;simToFinal()};
 function simToFinal(){
   clearInterval(tickTimer);['#call','#opt','#kick','#card'].forEach(s=>$(s).hidden=true);kick=null;
@@ -499,7 +500,8 @@ function gameOver(){
   S.phase='over';hint('');clearInterval(tickTimer);['#sb','#pauseBtn','#toBtn','#bulletBtn','#call','#opt','#kick','#card'].forEach(s=>$(s).hidden=true);
   const g=S.game,[us,them]=S.score,won=us>them,s=S.stats,rate=ncaaRating(s),u=S.home,opp=S.away;
   const storm=won&&S.userHome&&rankOf(opp.id)&&rankOf(opp.id)<=10&&(!rankOf(u.id)||rankOf(u.id)>rankOf(opp.id)+5);
-  if(S.userHome){g.hs=us;g.as=them}else{g.hs=them;g.as=us}
+  /* fix: assign by who is listed as host, not by S.userHome (false at neutral sites, which flipped the score) */
+  if(g.h===LG.user){g.hs=us;g.as=them}else{g.hs=them;g.as=us}
   recordGame(LG,g);
   const info={us,them,won,pst:S.pst,dxp:S.dxp,stats:s,storm,simmed:false};
   const rep=processUserGame(LG,g,info);LG.live=null;finishWeek(LG);
@@ -511,13 +513,13 @@ function gameOver(){
   const heat=DEP.map(([lab],di)=>`<span class="lab">${lab}</span>${LAT.map((l,li)=>{const z=zones[di+'-'+li];if(!z)return `<div class="cell"><small>—</small></div>`;const v=z.c/z.a;return `<div class="cell" style="background:color-mix(in srgb,${hc(v)} ${Math.round(25+Math.min(1,z.a/4)*45)}%,transparent);color:#fff"><b>${z.c}/${z.a}</b><small>${Math.round(v*100)}% · ${z.y} yds</small></div>`}).join('')}${di===2?'<span></span><div class="losl"></div>':''}`).join('');
   const top=Object.entries(S.pst).map(([id,st])=>({p:u.roster.find(x=>x.id==id),st})).filter(x=>x.p);
   const tline=(lab,k,fmt)=>{const b=top.slice().sort((a,c)=>c.st[k]-a.st[k])[0];return b&&b.st[k]?`<div class="lrow"><span class="l"><span class="num">${b.p.pos}</span><span>${lab}: <b>${esc(fullName(b.p))}</b></span></span><span>${fmt(b.st)}</span></div>`:''};
-  const stam=OFF.filter(p=>['QB','RB','WR','TE'].includes(p.role)).map(p=>{const v=stamina(p.pl,true)*condF(p.pl,true);return `<div class="stamrow"><span>${p.role} ${esc(p.pl.last)} <span class="stars">${'★'.repeat(p.pl.end)}</span></span>${meterHTML(v*100,v>.85?'var(--ok)':v>.75?'var(--warn)':'var(--hot)')}<span>${Math.round(v*100)}%</span></div>`}).join('');
+  const stam=OFF.filter(p=>['QB','RB','WR','TE'].includes(p.role)).map(p=>{const v=stamina(p.pl,true)*condF(p.pl,true);return `<div class="stamrow"><span>${p.role} ${esc(p.pl.last)} <span class="note">${OV(ovr(p.pl))} OVR</span></span>${meterHTML(v*100,v>.85?'var(--ok)':v>.75?'var(--warn)':'var(--hot)')}<span>${Math.round(v*100)}%</span></div>`}).join('');
   $('#postBody').innerHTML=`
     ${storm?'<div class="storm">Fans storm the field!</div>':''}
     <div class="card hero"><div class="eyebrow">Final${S.ot?' · '+(S.otRound>1?S.otRound:'')+'OT':''}${g.tag?' · '+esc(g.tag):''}${S.simmed?' · simulated finish':''}</div>
       <div class="final"><div class="side">${badge(u,'lg')}<small>${esc(teamName(u))}</small><strong style="color:${u.c1}">${us}</strong></div><span class="eyebrow">–</span><div class="side">${badge(opp,'lg')}<small>${esc(teamName(opp))}</small><strong style="color:${opp.c1}">${them}</strong></div></div>
       <div class="result" style="color:${won?'var(--ok)':'var(--hot)'}">${won?'Victory':'Defeat'}</div>
-      <div class="tags" style="justify-content:center"><span class="tag">+${rep.cc} CC</span><span class="tag ${rep.fan>=0?'ok':'hot'}">Fans ${rep.fan>=0?'+':''}${rep.fan}</span><span class="tag ${rep.mor>=0?'ok':'hot'}">Morale ${rep.mor>=0?'+':''}${rep.mor}</span>${g.rival&&won?`<span class="tag gold">${esc(u.trophy)} is yours</span>`:''}${(info.records||[]).map(r=>`<span class="tag gold">School record: ${esc(r)}</span>`).join('')}</div>
+      <div class="tags" style="justify-content:center"><span class="tag">+${rep.cc} CC</span><span class="tag gold">+${rep.cp} CP</span><span class="tag ${rep.fan>=0?'ok':'hot'}">Fans ${rep.fan>=0?'+':''}${rep.fan}</span><span class="tag ${rep.mor>=0?'ok':'hot'}">Morale ${rep.mor>=0?'+':''}${rep.mor}</span>${g.rival&&won?`<span class="tag gold">${esc(u.trophy)} is yours</span>`:''}${(info.records||[]).map(r=>`<span class="tag gold">School record: ${esc(r)}</span>`).join('')}</div>
       ${pog?`<div class="lrow"><span class="l"><span class="tag gold">Player of the game</span><b>${esc(fullName(pog))}</b> · ${pog.pos}</span></div>`:''}</div>
     <div class="grid2"><div class="card"><div class="h2">Passing</div><div class="kpis">
         <div><em>QB rating</em><b>${rate.toFixed(1)}</b></div><div><em>Comp / Att</em><b>${s.comp}/${s.att}</b></div><div><em>Pass yds</em><b>${s.passYds}</b></div>
@@ -527,11 +529,11 @@ function gameOver(){
         <p class="note">QB rating uses the college passer-efficiency formula: about 130 is average and 160+ is elite.</p></div>
       <div class="card"><div class="h2">Completion heatmap</div><div class="heat"><span></span>${LAT.map(l=>`<span class="col">${l[0]}</span>`).join('')}${heat}</div><div class="legend">0%<i></i>100% completion · blue line is the line of scrimmage</div></div></div>
     <div class="grid2"><div class="card"><div class="h2">Top performers</div><div class="list">${tline('Passing','py',x=>`${x.pc}/${x.pa} · ${x.py} yds · ${x.ptd} TD`)}${tline('Rushing','ry',x=>`${x.ra} car · ${x.ry} yds`)}${tline('Receiving','recy',x=>`${x.rec} rec · ${x.recy} yds`)}</div></div>
-      <div class="card"><div class="h2">Player development</div><div class="list">${rep.lev.slice(0,8).map(l=>`<div class="lrow"><span class="l"><span class="num">${l.pos}</span><span>${esc(l.name)}</span></span><span class="tag ok">${esc(l.attr)} → ${'★'.repeat(l.to)}</span></div>`).join('')||'<p class="note">No upgrades this week. Players earn XP from playing time and production.</p>'}
+      <div class="card"><div class="h2">Player development</div><div class="list">${rep.lev.slice(0,8).map(l=>`<div class="lrow"><span class="l"><span class="num">${l.pos}</span><span>${esc(l.name)}</span></span><span class="tag ok">${esc(l.attr)} → ${OV(l.to)}</span></div>`).join('')||'<p class="note">No upgrades this week. Players earn XP from playing time and production.</p>'}
         ${rep.inj.map(i=>`<div class="lrow"><span class="l"><span class="num">${i.pos}</span><span>${esc(i.name)}</span></span><span class="tag hot">${esc(i.why)} · ${i.wk} wk</span></div>`).join('')}</div></div></div>
-    <div class="card"><div class="h2">Stamina at the final whistle</div><p class="note">Speed drops steadily through a game. Higher stamina stars mean less drop-off; condition carries over week to week.</p>${stam}</div>
+    <div class="card"><div class="h2">Stamina at the final whistle</div><p class="note">Speed drops steadily through a game. A higher stamina rating means less drop-off; condition carries over week to week.</p>${stam}</div>
     <button class="btn wide" id="postGo">Continue</button>`;
   $('#post').hidden=false;$('#post .scroll').scrollTop=0;if(won)sfx('roar');if(storm){for(let i=0;i<6;i++)setTimeout(()=>sfx('roar'),i*300)}
-  $('#postGo').onclick=()=>{saveNow();S.simmed=false;showHub('home')};
-  saveNow();
+  $('#postGo').onclick=()=>{S.simmed=false;showHub('home')};
+  saveNow(true);
 }

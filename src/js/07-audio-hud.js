@@ -34,4 +34,5 @@ function hud(){
   $('#dd').textContent=ddText();$('#spot').textContent=S.conv?'Conversion':spotLabel(S.los);
   const st=teamStamina();const se=$('#stam');se.textContent='STA '+Math.round(st*100)+'%';se.style.color=st>.85?'var(--ok)':st>.75?'var(--warn)':'var(--hot)';
   $('#wxs').textContent=`${WX_ICON[S.wx]} ${S.wx}`;
+  if(!S.exitToast&&crowdLeave()>.12){S.exitToast=true;toast(S.neutral?'Fans are heading for the exits':S.userHome===(S.score[0]<S.score[1])?'The home crowd is heading for the exits':'Visiting fans are leaving early');sfx('groan')}
 }

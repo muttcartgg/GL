@@ -4,7 +4,24 @@
    ========================================================= */
 const TONES=['#7A4A22','#A8693A','#D9A066','#F1C27D'];
 let turfPat=null,crowdM=null,wxParts=null,spriteCache=new Map(),crowd=null;
-function resetRenderCaches(){spriteCache.clear();crowd=null;crowdM=null;wxParts=null}
+let crowdCache={};
+function resetRenderCaches(){spriteCache.clear();crowd=null;crowdM=null;wxParts=null;crowdCache={}}
+/* Fans leave in a 4th-quarter blowout: 0 (full stands) to ~.88 (mostly empty) */
+function crowdLeave(){
+  if(!S.home||S.ot||S.q<4)return 0;
+  const us=S.score[0],them=S.score[1],lead=Math.abs(us-them);if(lead<17)return 0;
+  const hostTrails=S.userHome?us<them:them<us,qp=1-clamp(S.clock/S.qlen,0,1);
+  const base=clamp((lead-14)/26,0,1)*(.35+.65*qp);
+  return clamp(S.neutral?base*.55:hostTrails?base:base*.3,0,.88);
+}
+function crowdThin(src,key,cell,seat){
+  const lv=Math.round(crowdLeave()*14);if(lv<=0)return src;
+  const k=key+lv,hit=crowdCache[k];if(hit&&hit.s===src)return hit.c;
+  const w=src.width,h=src.height,a=document.createElement('canvas');a.width=w;a.height=h;const g=a.getContext('2d');g.drawImage(src,0,0);g.globalCompositeOperation='destination-out';const t=lv/14;
+  for(let y=0;y<h;y+=cell)for(let x=0;x<w;x+=cell){const hs=((((x/cell)|0)*73856093)^(((y/cell)|0)*19349663))>>>0;if((hs%1000)/1000<t)g.fillRect(x,y,cell,cell)}
+  const b=document.createElement('canvas');b.width=w;b.height=h;const g2=b.getContext('2d');g2.fillStyle=seat;g2.fillRect(0,0,w,h);g2.fillStyle='rgba(255,255,255,.05)';for(let y=cell*2;y<h;y+=cell*3)g2.fillRect(0,y,w,1);g2.drawImage(a,0,0);
+  crowdCache[k]={s:src,c:b};return b;
+}
 
 /* ---------- particles ---------- */
 function spawnTurf(x,y,n){if(LG&&LG.settings.style==='retro')n=Math.ceil(n/2);for(let i=0;i<n;i++)particles.push({x,y,z:.1,vx:R(-3,3),vy:R(-3,3),vz:R(2,5),life:R(.4,.8),t:0,c:pick(['#3f8f45','#2f6f35','#6b4a2a','#4f9a55']),s:R(.07,.15),kind:'turf'})}
@@ -55,9 +72,9 @@ function drawModern(now){
   c.save();if(S.shake>0)c.translate(R(-1,1)*S.shake*14,R(-1,1)*S.shake*10);
   // stands + LED ribbon board
   const standBot=Y(-6);
-  if(standBot>0){const ch=Math.max(standBot+20,160),k=ch/crowdM.height,cw=crowdM.width*k;let off=((-cam.x*s*.55)%cw+cw)%cw;for(let x=off-cw;x<W;x+=cw)c.drawImage(crowdM,x,standBot-ch,cw,ch);
+  if(standBot>0){const ch=Math.max(standBot+20,160),k=ch/crowdM.height,cw=crowdM.width*k;let off=((-cam.x*s*.55)%cw+cw)%cw;for(let x=off-cw;x<W;x+=cw)c.drawImage(crowdThin(crowdM,'m',6,'#0c1119'),x,standBot-ch,cw,ch);
     const bh=Math.max(6,s*.75);const team=S.userHome?S.home:S.away;const lg=c.createLinearGradient(0,standBot-bh,0,standBot);lg.addColorStop(0,shade(team.c1,.2));lg.addColorStop(1,shade(team.c1,-.3));c.fillStyle=lg;c.fillRect(0,standBot-bh,W,bh);
-    c.fillStyle=inkOn(team.c1);c.font=`900 italic ${bh*.72}px -apple-system,system-ui,sans-serif`;c.textBaseline='middle';const txt=`${team.abbr} · ${team.name.toUpperCase()} · `;const tw=c.measureText(txt).width;let to=((-cam.x*s*.9-now*.04)%tw+tw)%tw;for(let x=to-tw;x<W;x+=tw)c.fillText(txt,x,standBot-bh/2+1)}
+    c.fillStyle=inkOn(team.c1);c.font=`900 italic ${bh*.72}px -apple-system,system-ui,sans-serif`;c.textBaseline='middle';const txt=`${team.abbr} · ${team.name.toUpperCase()} · ${S.neutral?'':(team.stadium||'').toUpperCase()+' · '}`;const tw=c.measureText(txt).width;let to=((-cam.x*s*.9-now*.04)%tw+tw)%tw;for(let x=to-tw;x<W;x+=tw)c.fillText(txt,x,standBot-bh/2+1)}
   // sideline surface
   c.fillStyle=night?'#163d1f':'#1c4a25';fieldPath(c,-8,-6,128,FW+8);
   c.fillStyle='rgba(255,255,255,.05)';fieldPath(c,-8,-6,128,-4.8);
@@ -229,7 +246,7 @@ function drawRetro(now){
   if(!S.home){ctx.setTransform(1,0,0,1,0,0);ctx.drawImage(low,0,0,LW*PXS*DPR,LH*PXS*DPR);return}
   if(!crowd)buildCrowdRetro();
   const standBot=AY(-6),standTop=standBot-crowd.height;const off=((-cam.x*A*.9)%crowd.width+crowd.width)%crowd.width;
-  for(let x=off-crowd.width;x<LW;x+=crowd.width)c.drawImage(crowd,Math.round(x),standTop);
+  for(let x=off-crowd.width;x<LW;x+=crowd.width)c.drawImage(crowdThin(crowd,'r',2,'#10141B'),Math.round(x),standTop);
   c.fillStyle='#0A0D12';c.fillRect(0,0,LW,Math.max(0,standTop));c.fillStyle=S.home.c1;c.fillRect(0,standBot,LW,2);c.fillStyle='#16361F';c.fillRect(0,standBot+2,LW,AY(FW+6)-standBot-2);
   const t0=AY(0),t1=AY(FW);
   for(let i=0;i<24;i++){const x0=AX(i*5),x1=AX((i+1)*5);if(x1<0||x0>LW)continue;c.fillStyle=i%2?'#2F7D36':'#2A7231';c.fillRect(x0,t0,x1-x0,t1-t0)}
